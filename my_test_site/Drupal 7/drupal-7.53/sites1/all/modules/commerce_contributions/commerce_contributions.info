@@ -1,0 +1,25 @@
+name =  Commerce Contributions
+description = Enables Content types to have a Field that shows a Contribution Meter and Target amount, and allows users to Contribute to the Content (Project, Fund Raising, Investment Scheme...etc).
+core = 7.x
+dependencies[] = commerce
+dependencies[] = commerce_cart
+dependencies[] = commerce_checkout
+dependencies[] = commerce_ui
+dependencies[] = commerce_product
+dependencies[] = commerce_product_ui
+dependencies[] = commerce_order
+dependencies[] = commerce_order_ui
+dependencies[] = commerce_line_item_ui
+dependencies[] = commerce_customer_ui
+package = "Commerce"
+php = 5.0
+
+files[] = tests/commerce_contributions.test
+
+
+; Information added by drupal.org packaging script on 2013-09-30
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "commerce_contributions"
+datestamp = "1380560076"
+

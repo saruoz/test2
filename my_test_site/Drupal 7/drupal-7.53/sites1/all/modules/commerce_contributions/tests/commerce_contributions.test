@@ -1,0 +1,440 @@
+<?php
+
+/**
+ * @file
+ * Tests for Commerce Contributions module
+ */
+
+class CommerceContributionsTests extends DrupalWebTestCase {
+
+  /**
+   * Base setup for all test cases
+   */
+  function setUp() {
+    parent::setUp(array('commerce_contributions'));
+  }
+
+  /**
+   * Creates a user with a specific set of permissions and logs him in
+   */
+  function loginUserWithPermissions($permissions){
+    $user = $this->drupalCreateUser($permissions);
+    $this->drupalLogin($user);
+    return $user;
+  }
+
+  /**
+   * Add a new content type with a commerce contributions field
+   */
+  function assertAddContentTypeWithCommerceContributionsField(){
+
+    $settings = array(
+        'name' => "Investment",
+        'type' => "investment"
+    );
+
+    $this->drupalCreateContentType($settings);
+
+    $data = array(
+        'fields[_add_new_field][label]' => "Invest",
+        'fields[_add_new_field][field_name]' => "invest",
+        'fields[_add_new_field][type]' => "commerce_contributions_field",
+        'fields[_add_new_field][widget_type]' => "commerce_contributions_field_widget"
+    );
+
+    $this->drupalPost("admin/structure/types/manage/investment/fields", $data, t('Save'));
+
+    $this->assertText(t("Contribution text in Cart"), "Commerce Contributions field added successfully", "Commerce Contributions");
+
+    $data = array(
+        'field[settings][contribute_text]' => "Invest",
+        'field[settings][button_text]' => "Invest",
+    );
+
+    $this->drupalPost("admin/structure/types/manage/investment/fields/field_invest/field-settings", $data, t('Save field settings'));
+
+    $this->assertText(t("Updated field Invest field settings"), "Commerce Contributions field global configurations", "Commerce Contributions");
+
+    $data = array(
+        'field_invest[und][0][target_amount]' => "5000",
+        'field[settings][button_text]' => "Invest",
+    );
+
+    $this->drupalPost("admin/structure/types/manage/investment/fields/field_invest", $data, t('Save settings'));
+
+    $this->assertText(t("Saved Invest configuration"), "Commerce Contributions field instance settings", "Commerce Contributions");
+
+    $this->drupalLogout();
+
+    $permissions = array(
+      'create investment content'
+    );
+
+    self::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("node/add/investment");
+
+    $this->assertFieldByName('field_invest[und][0][target_amount]', 5000, "Commerce Contributions field configured correctly");
+
+    $this->drupalLogout();
+
+  }
+
+  /**
+   * Add new content with a commerce contributions field and make sure the meter and contribution form appear
+   */
+  function assertAddContentWithCommerceContributionsMeter(){
+    $settings = array(
+        'title' => "Invest in Our Program",
+        'type' => 'investment',
+        'field_invest' => array(LANGUAGE_NONE => array(array("target_amount" => 200000)))
+    );
+
+    $node = $this->drupalCreateNode($settings);
+
+    $this->drupalGet("node/".$node->nid);
+
+    $this->assertRaw('<div id="commerce_contributions_meter">', "Commerce Contributions Meter available", "Commerce Contributions");
+
+    self::assertContributionFormExists();
+
+    return $node;
+  }
+
+  /**
+   * Checks that the amount textbox exists as well as the Invest button
+   */
+  function assertContributionFormExists(){
+    $this->assertFieldByName('amount', "", "Commerce Contributions field amount textbox exists");
+    $this->assertFieldByName('op', "Invest", "Commerce Contributions field Invest button exists");
+  }
+
+  /**
+   * Make contribution and complete checkout
+   *
+   * @param $amount
+   * Amount to contribute
+   *
+   * @param $meterAmount
+   * Current amount on the meter
+   *
+   * @param $node
+   * Contribution node
+   */
+  function assertMakeContributionAndCheckout($amount, $meterAmount, $node, $anonymous = TRUE) {
+
+    $this->drupalGet("node/".$node->nid);
+
+    $data = array(
+        'amount' => $amount
+    );
+
+    $this->drupalPost($this->getUrl(), $data, t('Invest'));
+
+    $this->assertText(t("Checkout"), "Commerce Contributions form redirects to checkout", "Commerce Contributions");
+
+    $this->assertText(t("Invest " . commerce_currency_format($amount*100, commerce_default_currency())), "Correct Contribution amount exists in the cart", "Commerce Contributions");
+
+    $data = array();
+
+    if ($anonymous) {
+      $data = array(
+          'account[login][mail]' => "user@domain.com",
+          'customer_profile_billing[commerce_customer_address][und][0][name_line]' => "XXX",
+          'customer_profile_billing[commerce_customer_address][und][0][thoroughfare]' => "XXX",
+          'customer_profile_billing[commerce_customer_address][und][0][locality]' => "XXX",
+      );
+    }
+    else {
+      $data = array(
+          'customer_profile_billing[commerce_customer_address][und][0][name_line]' => "XXX",
+          'customer_profile_billing[commerce_customer_address][und][0][thoroughfare]' => "XXX",
+          'customer_profile_billing[commerce_customer_address][und][0][locality]' => "XXX",
+      );
+    }
+
+    $this->drupalPost($this->getUrl(), $data, t('Continue to next step'));
+
+    $this->assertText(t("Review order"), "Review Order page loaded correctly", "Commerce Contributions");
+
+    $this->drupalPost($this->getUrl(), array(), t('Continue to next step'));
+
+    $this->drupalGet("node/".$node->nid);
+
+    $formattedAmount = commerce_currency_format($meterAmount*100, commerce_default_currency());
+
+    $this->assertFieldByXPath('//*[@id="current_amount" and contains(.,"'.$formattedAmount.'")]', TRUE, "Commerce Contributions meter updated correctly");
+  }
+}
+
+/**
+ * User can create an Invoice
+ */
+class UserCreateContentTypeWithCommerceContributionsField extends CommerceContributionsTests {
+
+  /**
+   * Used by the Simpletest module to display info about the test
+   */
+  public static function getInfo() {
+    return array(
+        'name' => 'User can create content type with Commerce Contributions field',
+        'description' => 'Test the creation of a content type with Commerce Contributions field',
+        'group' => 'Commerce Contributions',
+    );
+  }
+
+  /**
+   * Test the creation of a content type with Commerce Contributions field
+   */
+  function testUserLoginAndCreateContentTypeWithCommerceContributionsField(){
+    $permissions = array(
+      'administer content types'
+    );
+
+    parent::loginUserWithPermissions($permissions);
+
+    parent::assertAddContentTypeWithCommerceContributionsField();
+
+  }
+}
+
+/**
+ * User changes the commerce contribution field display format to no meter
+ */
+class UserConfiguresFieldWithAndWithoutContributionMeter extends CommerceContributionsTests {
+
+  /**
+   * Used by the Simpletest module to display info about the test
+   */
+  public static function getInfo() {
+    return array(
+        'name' => 'User can configure Commerce Contributions field to display with or without the Contribution Meter',
+        'description' => 'Test configuring the Commerce Contributions field to display with or without the Contribution Meter',
+        'group' => 'Commerce Contributions',
+    );
+  }
+
+  /**
+   * Test the creation of a content type with Commerce Contributions field
+   */
+  function testUserLoginAndCreateContentTypeWithCommerceContributionsField(){
+    $permissions = array(
+      'administer content types'
+    );
+
+    parent::loginUserWithPermissions($permissions);
+
+    parent::assertAddContentTypeWithCommerceContributionsField();
+
+    $node = parent::assertAddContentWithCommerceContributionsMeter();
+
+    $this->drupalLogout();
+
+    $permissions = array(
+      'administer content types'
+    );
+
+    parent::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("admin/structure/types/manage/investment/display");
+
+    $this->assertFieldByName('fields[field_invest][type]');
+
+    $this->assertText(t("Commerce Contributions Meter and Contribute form"), "Commerce Contributions field display format meter option exists", "Commerce Contributions");
+
+    $this->assertText(t("Commerce Contributions Contribute form only"), "Commerce Contributions field display format no meter option exists", "Commerce Contributions");
+
+    $data = array(
+        'fields[field_invest][type]' => "commerce_contributions_field_contribute_only_formatter"
+    );
+
+    $this->drupalPost("admin/structure/types/manage/investment/display", $data, t('Save'));
+
+    $this->drupalGet("node/".$node->nid);
+
+    $this->assertNoRaw('<div id="commerce_contributions_meter">', "Commerce Contributions Meter NOT available", "Commerce Contributions");
+
+    parent::assertContributionFormExists();
+
+  }
+}
+
+/**
+ * User makes a contribution using the commerce contribution form
+ */
+class UserMakesContribution extends CommerceContributionsTests {
+
+  /**
+   * Used by the Simpletest module to display info about the test
+   */
+  public static function getInfo() {
+    return array(
+        'name' => 'User can contribute using the commerce contribution form',
+        'description' => 'Test making a contribution using the commerce contribution form',
+        'group' => 'Commerce Contributions',
+    );
+  }
+
+  /**
+   * Test that a user can make a contribution using the commerce contribution form
+   */
+  function testUserMakesContributionWithCommerceContributionsForm() {
+
+    $permissions = array(
+        'administer content types'
+    );
+
+    parent::loginUserWithPermissions($permissions);
+
+    parent::assertAddContentTypeWithCommerceContributionsField();
+
+    $node = parent::assertAddContentWithCommerceContributionsMeter();
+
+    $this->drupalLogout();
+
+    user_role_change_permissions(DRUPAL_ANONYMOUS_RID, array(
+      'access checkout' => TRUE,
+    ));
+
+    $this->drupalGet("node/".$node->nid);
+
+    parent::assertContributionFormExists();
+
+    parent::assertMakeContributionAndCheckout(1000, 1000, $node);
+
+    parent::assertMakeContributionAndCheckout(500, 1500, $node);
+  }
+
+}
+
+/**
+ * Only a user with proper permissions can view contributions
+ */
+class UserWithProperPermissionsCanViewContributions extends CommerceContributionsTests {
+
+  /**
+   * Used by the Simpletest module to display info about the test
+   */
+  public static function getInfo() {
+    return array(
+        'name' => 'Only a user with proper permissions can view contributions',
+        'description' => 'Test that Only a user with proper permissions can view contributions',
+        'group' => 'Commerce Contributions',
+    );
+  }
+
+  /**
+   * Test that a user can make a contribution it appears on the user contributions and all contributions pages
+   */
+  function testUserCanAccessOwnContributionsWithPermission() {
+
+    $permissions = array(
+        'access own contributions'
+    );
+
+    $user = parent::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("user/".$user->uid."/commerce-contributions");
+
+    $this->assertResponse(200);
+
+    $this->drupalLogout();
+
+    $permissions = array(
+        'access content'
+    );
+
+    $user = parent::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("user/".$user->uid."/commerce-contributions");
+
+    $this->assertResponse(403);
+  }
+
+  /**
+   * Test that a user can make a contribution it appears on the user contributions and all contributions pages
+   */
+  function testUserCanAccessAllContributionsWithPermission() {
+
+    $permissions = array(
+        'access all contributions'
+    );
+
+    $user = parent::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("admin/commerce/commerce-contributions/view-contributions");
+
+    $this->assertResponse(200);
+
+    $this->drupalLogout();
+
+    $permissions = array(
+        'access content'
+    );
+
+    $user = parent::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("admin/commerce/commerce-contributions/view-contributions");
+
+    $this->assertResponse(403);
+  }
+}
+
+/**
+ * User makes a contribution and it appears on the user contributions and all contributions pages
+ */
+class UserMakesContributionShowsInContributions extends CommerceContributionsTests {
+
+  /**
+   * Used by the Simpletest module to display info about the test
+   */
+  public static function getInfo() {
+    return array(
+        'name' => 'When a user makes a contribution it shows on the user contributions and all contributions pages',
+        'description' => 'Test making a contribution shows on the user contributions and all contributions pages',
+        'group' => 'Commerce Contributions',
+    );
+  }
+
+  /**
+   * Test that a user can make a contribution it appears on the user contributions and all contributions pages
+   */
+  function testUserMakesContributionShowsInUserContributionsAndAllContributions() {
+
+    $permissions = array(
+        'administer content types'
+    );
+
+    parent::loginUserWithPermissions($permissions);
+
+    parent::assertAddContentTypeWithCommerceContributionsField();
+
+    $node = parent::assertAddContentWithCommerceContributionsMeter();
+
+    $permissions = array(
+        'access own contributions', 'access all contributions', 'access checkout'
+    );
+
+    $user = parent::loginUserWithPermissions($permissions);
+
+    $this->drupalGet("node/".$node->nid);
+
+    parent::assertContributionFormExists();
+
+    $amount = 1000;
+
+    $formattedAmount = commerce_currency_format($amount*100, commerce_default_currency());
+
+    parent::assertMakeContributionAndCheckout($amount, $amount, $node, FALSE);
+
+    $this->drupalGet("user/".$user->uid."/commerce-contributions");
+
+    $this->assertText($node->title.$formattedAmount, "Contribution node entry and contribution amount exists in user contributions table", "Commerce Contributions");
+
+    $this->drupalGet("admin/commerce/commerce-contributions/view-contributions");
+
+    $this->assertText($node->title.$formattedAmount, "Contribution node entry and contribution amount exists in all contributions table", "Commerce Contributions");
+
+  }
+
+}
