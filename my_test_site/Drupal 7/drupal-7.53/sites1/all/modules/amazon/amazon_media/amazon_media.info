@@ -1,0 +1,14 @@
+
+name = Amazon media
+description = Stores extended Amazon product information for books, music, DVDs, and software.
+package = Amazon
+dependencies[] = amazon
+core = 7.x
+php = 5.2
+
+; Information added by Drupal.org packaging script on 2015-08-30
+version = "7.x-1.1+21-dev"
+core = "7.x"
+project = "amazon"
+datestamp = "1440976741"
+

@@ -1,0 +1,308 @@
+<?php
+
+/**
+ * @file commerce_contributions.module
+ */
+
+/*
+ * Commerce Contributions include directory path
+ */
+define("COMMERCE_CONTRIBUTIONS_INCLUDES", DRUPAL_ROOT.'/'.drupal_get_path("module", "commerce_contributions").'/includes/');
+define("COMMERCE_CONTRIBUTIONS_THEME", DRUPAL_ROOT.'/'.drupal_get_path("module", "commerce_contributions").'/theme/');
+
+
+/**
+ *  Forms and Main UI
+ */
+require_once COMMERCE_CONTRIBUTIONS_INCLUDES.'commerce_contributions.ui.inc';
+
+/*
+ * Theme functions and display logic
+ */
+require_once COMMERCE_CONTRIBUTIONS_THEME.'commerce_contributions.theme.inc';
+
+/**
+ * Rules Integration
+ */
+require_once COMMERCE_CONTRIBUTIONS_INCLUDES.'commerce_contributions.rules.inc';
+
+/**
+ * Views Integration
+ */
+require_once COMMERCE_CONTRIBUTIONS_INCLUDES.'commerce_contributions.views.inc';
+
+
+
+/**
+ * Implementation of hook_init()
+ */
+function commerce_contributions_init() {
+  drupal_add_css(drupal_get_path('module', 'commerce_contributions') . '/theme/commerce_contributions.css');
+}
+
+/**
+ * Implementation of hook_permission()
+ */
+function commerce_contributions_permission() {
+  return array(
+      'access own contributions' => array(
+          'description' => t('View own contributions tab'),
+          'title' => t('Access own Contributions'),
+      ),
+      'access all contributions' => array(
+          'description' => t('View the contributions for all users'),
+          'title' => t('Access all Contributions'),
+      ),
+  );
+}
+
+/**
+ * Implementation of hook_menu()
+ */
+function commerce_contributions_menu() {
+
+  $items['user/%/commerce-contributions'] = array(
+      'title' => 'Contributions',
+      'page callback' => 'commerce_contributions_get_user_contributions',
+      'page arguments' => array(1),
+      'access arguments' => array('access own contributions'),
+      'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['admin/commerce/commerce-contributions'] = array(
+      'title' => 'Commerce Contributions',
+      'description' => 'Administer Commerce Contributions',
+      'page callback' => 'system_admin_menu_block_page',
+      'access arguments' => array('access administration pages'),
+      'file path' => drupal_get_path('module', 'system'),
+      'file' => 'system.admin.inc',
+      'weight' => -15,
+  );
+
+  $items['admin/commerce/commerce-contributions/view-contributions'] = array(
+      'title' => 'View All Contributions',
+      'page callback' => 'commerce_contributions_view_contributions',
+      'access arguments' => array('access all contributions'),
+      'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+function commerce_contributions_get_user_contributions($uid){
+  return theme("commerce_contributions_view_user_contributions", array("user" => user_load($uid)));
+}
+
+function commerce_contributions_view_contributions(){
+  return theme("commerce_contributions_view_contributions", array());
+}
+
+function commerce_contributions_entity_property_info_alter(&$info) {
+  if (!empty($info['commerce_contribution']['bundles'])) {
+    // Move the default price property to the product by default; as it is a
+    // required default field, this makes dealing with it more convenient.
+    $properties = array();
+
+    foreach ($info['commerce_contribution']['bundles'] as $bundle => $bundle_info) {
+      $bundle_info += array('properties' => array());
+      $properties += $bundle_info['properties'];
+    }
+
+    $info['commerce_contribution']['properties']['commerce_price'] = $properties['commerce_price'];
+  }
+}
+
+/**
+ * Implementation of hook_field_info()
+ */
+function commerce_contributions_field_info() {
+  return array(
+      'commerce_contributions_field' => array(
+          'label' => t('Commerce Contributions Field'),
+          'description' => t('A field that implements a contributions meter and allows the admin to enter a target ammount and shows users a contribute form'),
+          'default_widget' => 'commerce_contributions_field_widget',
+          'default_formatter' => 'commerce_contributions_field_meter_contribute_formatter',
+      ),
+  );
+}
+
+/**
+ * Implementation of hook_field_formatter_info()
+ */
+function commerce_contributions_field_formatter_info() {
+  return array(
+      'commerce_contributions_field_meter_contribute_formatter' => array(
+          'label' => t('Commerce Contributions Meter and Contribute form'),
+          'field types' => array('commerce_contributions_field'),
+      ),
+      'commerce_contributions_field_contribute_only_formatter' => array(
+          'label' => t('Commerce Contributions Contribute form only'),
+          'field types' => array('commerce_contributions_field'),
+      ),
+  );
+}
+
+/**
+ * Implementation of hook_field_widget_info()
+ */
+function commerce_contributions_field_widget_info() {
+  return array(
+      'commerce_contributions_field_widget' => array(
+          'label' => t('Contribution Target Amount'),
+          'field types' => array('commerce_contributions_field'),
+      ),
+  );
+}
+
+function commerce_contributions_field_settings_form($field, $instance, $has_data) {
+
+  $settings = $field['settings'];
+
+  $form['contribute_text'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Contribution text in Cart'),
+      '#default_value' => array_key_exists('contribute_text', $settings) ? $settings['contribute_text'] : t('Contribute'),
+      '#description' => t('Will appear in cart as Contribute [amount], ex: Contribute $100'),
+      '#size' => 30,
+      '#maxlength' => 50,
+      '#required' => TRUE,
+  );
+
+  $form['button_text'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Contribute Button Text'),
+      '#default_value' => array_key_exists('button_text', $settings) ? $settings['button_text'] : t('Contribute'),
+      '#size' => 30,
+      '#maxlength' => 50,
+      '#required' => TRUE,
+  );
+
+  return $form;
+}
+
+function commerce_contributions_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+
+  $delta = isset($delta)? $delta : 0;
+
+  $saved_options = isset($items[$delta]['target_amount'])? $items[$delta]['target_amount'] / 100 : 0;
+
+  switch ($instance['widget']['type']) {
+
+    case 'commerce_contributions_field_widget':
+
+      $element['target_amount'] = array(
+          '#type' => 'textfield',
+          '#title' => t('Contributions Target Amount'),
+          '#default_value' => $saved_options,
+          '#description' => t('Target amount in ') . commerce_default_currency(),
+          '#element_validate' => array('_commerce_contributions_field_amount_validate'),
+          '#size' => 20,
+          '#maxlength' => 20,
+          '#required' => TRUE,
+      );
+
+      break;
+  }
+
+  return $element;
+}
+
+function _commerce_contributions_field_amount_validate($element, &$form_state) {
+  if (!is_numeric($form_state['values'][$element['#parents'][0]]['und'][0]['target_amount'])) {
+    form_set_error('target_amount', 'Value must be numeric!');
+  }
+  else {
+    form_set_value($element, intval($form_state['values'][$element['#parents'][0]]['und'][0]['target_amount'] * 100), $form_state);
+  }
+}
+
+/**
+ * Implementation of hook_field_is_empty()
+ */
+function commerce_contributions_field_is_empty($item, $field) {
+  return empty($item['target_amount']);
+}
+
+/**
+ * Implementation of hook_field_formatter_view()
+ */
+function commerce_contributions_field_formatter_view($object_type, $object, $field, $instance, $langcode, $items, $display) {
+
+  $element = array();
+
+  $settings = $field['settings'];
+
+  $entity_id = $object->nid;
+
+  $button_text = array_key_exists('button_text', $settings) ? $settings['button_text'] : t('Contribute');
+
+  $contribute_text = array_key_exists('contribute_text', $settings) ? $settings['contribute_text'] : t('Contribute');
+
+  switch ($display['type']) {
+    case 'commerce_contributions_field_meter_contribute_formatter':
+      foreach ($items as $delta => $item) {
+        $element[$delta] = array(
+            '#markup' => drupal_render(drupal_get_form('commerce_contributions_meter_contribute_form', $item['target_amount'], $entity_id, $button_text, $contribute_text)),
+        );
+      }
+
+      break;
+
+    case 'commerce_contributions_field_contribute_only_formatter':
+      foreach ($items as $delta => $item) {
+        $element[$delta] = array(
+            '#markup' => drupal_render(drupal_get_form('commerce_contributions_contribute_only_form', $item['target_amount'], $entity_id, $button_text, $contribute_text)),
+        );
+      }
+
+      break;
+  }
+
+  return $element;
+}
+
+/**
+ * Calculates total contributions for each entity
+ */
+function commerce_contributions_calculate_contributions($entity_id) {
+
+  $result = db_query("SELECT * FROM {commerce_contributions} WHERE entity_id=:entity_id", array(':entity_id' => $entity_id));
+
+  $contributions = 0;
+
+  foreach ($result as $row) {
+    $order = commerce_order_load($row->order_id);
+    $contributions += isset($order->commerce_order_total['und'][0]['amount'])? $order->commerce_order_total['und'][0]['amount'] : 0;
+  }
+
+  return $contributions;
+}
+
+/**
+ * Implementation of hook_commerce_line_item_type_info_alter()
+ */
+function commerce_contributions_commerce_line_item_type_info_alter(&$line_items) {
+  //add a title callback function to modify the line item title on each commerce contribution order
+  $line_items['product']['callbacks']['title'] = 'commerce_contributions_line_item_title';
+}
+
+/**
+ * Checks whether the line item is a commerce contribution item, and modifies it's title accordingly
+ */
+function commerce_contributions_line_item_title($line_item) {
+  if($line_item->line_item_label == 'contribution_do_not_delete'){
+
+    //load the order to get the text for the line item title
+    $order = commerce_order_load($line_item->order_id);
+
+    //make sure the required data is filled in the order object
+    if(isset($order->data['contribution_text']) && isset($order->data['contribution_amount'])){
+      return t($order->data['contribution_text'])." ".commerce_currency_format($order->data['contribution_amount']*100, commerce_default_currency());
+    }
+  }
+  else{
+  return t('!product', array(
+        '!product' => commerce_product_line_item_title($line_item),
+        ));
+  }
+}

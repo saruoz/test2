@@ -1,0 +1,82 @@
+<?php
+
+/**
+ * @file commerce_contributions.install
+ *
+ * Contains install and update functions for Commerce Contributions
+ */
+
+function commerce_contributions_install(){
+  drupal_static_reset();
+
+  commerce_product_configure_product_types();
+
+  $product_type = commerce_product_ui_product_type_new();
+
+  $product_type['type'] = 'commerce_contribution';
+  $product_type['name'] = t('Commerce Contribution');
+  $product_type['description'] = t('A commerce contribution product type.');
+  $product_type['is_new'] = TRUE;
+
+  commerce_product_ui_product_type_save($product_type, TRUE);
+  
+  $new_product = commerce_product_new('commerce_contribution');
+  $new_product->uid = '1';
+  $new_product->sku = 'contribution_do_not_delete';
+  $new_product->title = 'Standard Contribution (Do not delete.)';
+
+  $new_product->commerce_price[LANGUAGE_NONE][0]['amount'] = 0;
+  $new_product->commerce_price[LANGUAGE_NONE][0]['currency_code'] = commerce_default_currency();
+
+  commerce_product_save($new_product);
+}
+
+function commerce_contributions_uninstall(){
+  if (!function_exists("commerce_product_type_load")) {
+            include_once(drupal_get_path('module', 'commerce').'/modules/product/commerce_product.module');
+  }
+  if ($type = commerce_product_type_load('commerce_contribution')) {
+    commerce_product_ui_product_type_delete('commerce_contribution');
+  }
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function commerce_contributions_schema() {
+    $schema = array();
+    $schema['commerce_contributions'] = array(
+        'description' => t('Stores the data for contributions.'),
+        'fields' => array(
+            'uid' => array(
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+                'description' => t('Drupal user id'),
+            ),
+            'entity_id' => array(
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+                'description' => t('Drupal Content entity ID.'),
+            ),
+            'order_id' => array(
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+                'description' => t('The order id of the contribution'),
+            ),
+
+        ),
+    );
+    return $schema;
+}
+
+function commerce_contributions_field_schema($field) {
+  $columns = array(
+    'target_amount' => array('type' => 'int', 'not null' => TRUE),
+  );
+  return array(
+    'columns' => $columns,
+  );
+}
